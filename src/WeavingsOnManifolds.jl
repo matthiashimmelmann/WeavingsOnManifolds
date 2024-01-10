@@ -1,6 +1,7 @@
 module WeavingsOnManifolds
 import HomotopyContinuation: Expression, Variable, @var
 import LinearAlgebra
+import GLMakie
 
 mutable struct WeavingOnManifold
     constraints
