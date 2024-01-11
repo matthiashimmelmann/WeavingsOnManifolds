@@ -16,13 +16,14 @@ struct WeavingOnManifold
     bars
     cables
     planes
+    variablePositions
 
     function WeavingOnManifold(offsetList::Vector{Bool}, bars::Vector, cables::Vector, planes::Vector, manifold::String, offset::Float64)
         (offset<=0.5 && offset>=0.05) || @warn "We recommend an offset between 5% and 50%."
         @var x[1:3, 1:length(offsetList)]
 
         xs = zeros(Expression,(3,length(offsetList)))
-        manifoldEquations, barEquations = [], []
+        manifoldEquations, barEquations, xvarz, positions = Vector{Expression}([]), Vector{Expression}([]), Vector{Variable}([]), []
         if isequal(lowercase(manifold), "sphere")
             xs[:,1] = [offsetList[1] ? 1+offset : 1-offset, 0, 0]
             xs[:,2] = [0, x[2,2], x[3,2]]
@@ -33,8 +34,15 @@ struct WeavingOnManifold
             for bar in bars
                 xs[:,bar[2]] = offsetList[bar[2]] ? xs[:,bar[1]]*(1+offset)/(1-offset) : xs[:,bar[1]]*(1-offset)/(1+offset)
             end
-            for i in 1:size(xs)[2]
-                for j in 1:size(xs)[1]
+
+            for i in 1:size(xs)[2], j in 1:size(xs)[1]
+                try
+                    push!(xvarz, Variable(xs[j,i]))
+                    push!(positions, (j,i))
+                catch
+                end
+            end
+
             manifoldEquations = [offsetList[i] ? sum( xs[:,i].^2 ) - (1+offset)^2 : sum( xs[:,i].^2 ) - (1-offset)^2 for i in 1:length(offsetList)]
         else
             throw(error("Only weavings on the sphere are implemented right now!"))
@@ -42,31 +50,35 @@ struct WeavingOnManifold
         #barEquations = [sum( (xs[:,bar[1]] - xs[:,bar[2]]).^2 ) - (2*offset)^2 for bar in bars]
         planeEquations = vcat([[cross(xs[:,plane[2]]-xs[:,plane[1]], xs[:,plane[3]]-xs[:,plane[2]])'*(xs[:,plane[4]]-xs[:,plane[3]]), cross(xs[:,plane[2]]-xs[:,plane[1]], xs[:,plane[3]]-xs[:,plane[2]])'*(xs[:,plane[1]]-xs[:,plane[4]])] for plane in planes]...)
         energyFunction = sum([sum((xs[:,cable[1]] - xs[:,cable[2]]).^2) for cable in cables])
-        new(lowercase(manifold), offsetList, offset, Vector{Expression}(vcat(manifoldEquations, barEquations, planeEquations)), #=insert x coordinates here=#, bars, cables, planes)
+        new(lowercase(manifold), offsetList, offset, Vector{Expression}(vcat(manifoldEquations, planeEquations)), xvarz, bars, cables, planes, positions)
     end
 end
 
 function toMatrix(configuration, Weave::WeavingOnManifold)
-    p0 = zeros(Number,3,Int((length(configuration)+4)/3))
+    p0 = zeros(Number,3,Int(length(Weave.offsetList)))
     if isequal(Weave.manifold, "sphere")
-        global count = 3
+        global count = 1
         p0[:,1] = [Weave.offsetList[1] ? 1+Weave.offset : 1-Weave.offset, 0, 0]
-        p0[:,2] = [0, configuration[1], configuration[2]]
+        p0[1,2] = 0
     else
         throw(error("Only weavings on the sphere are implemented right now!"))
     end
 
-    for i in 3:size(p0)[2]
-        p0[1:3,i] = configuration[count:count+2]
-        global count = count+3
+    for pos in Weave.variablePositions
+        p0[pos[1],pos[2]] = configuration[count]
+        global count = count+1
+    end
+
+    for bar in Weave.bars
+        p0[:,bar[2]] = Weave.offsetList[bar[2]] ? p0[:,bar[1]]*(1+Weave.offset)/(1-Weave.offset) : p0[:,bar[1]]*(1-Weave.offset)/(1+Weave.offset)
     end
     return(p0)
 end
 
-function toArray(p)
+function toArray(p, Weave::WeavingOnManifold)
     configuration = Vector{Float64}([])
-    append!(configuration, p[2:3,2])
-    foreach(i->append!(configuration, p[:,i]), 3:size(p)[2])
+    positions = Weave.variablePositions
+    foreach(pos->append!(configuration, p[pos[1], pos[2]]), positions)
     return configuration
 end
 
@@ -97,7 +109,7 @@ function test()
     Weave = WeavingsOnManifolds.WeavingOnManifold([false,true,false,true, true,false,true,false, false,true,false,true], [(1,5),(2,11),(3,7),(4,9),(6,10),(8,12)], [(1,2),(2,3),(3,4),(4,1), (5,6),(6,7),(7,8),(8,5), (9,10),(10,11),(11,12),(12,9)], [(1,2,3,4), (5,6,7,8), (9,10,11,12)], "sphere",0.1)
     p0 = [1 0 0; 0 -1 0; -1 0 0; 0 1 0; 1 0 0; 0 0 -1; -1 0 0; 0 0 1; 0 1 0; 0 0 -1; 0 -1 0; 0 0 1]'
     display(Weave)
-    initialConfiguration = toArray(p0)
+    initialConfiguration = toArray(p0, Weave)
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
     plotWeaving(q, Weave)
     q = computeOptimalWeaving(q, Weave)
