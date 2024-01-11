@@ -20,7 +20,8 @@ struct WeavingOnManifold
 
     function WeavingOnManifold(offsetList::Vector{Bool}, bars::Vector, cables::Vector, planes::Vector; manifold="sphere", implicitManifold=x->x[1]^2+x[2]^2+x[3]^2-1, offset=0.1)
         (offset<=0.5 && offset>=0.05) || @warn "We recommend an offset between 5% and 50%."
-        implicitManifold([1,2,3])
+        manifold!="free" || typeof(implicitManifold([1.,2,3]))==Float64
+
         @var x[1:3, 1:length(offsetList)]
 
         xs = zeros(Expression,(3,length(offsetList)))
@@ -28,9 +29,7 @@ struct WeavingOnManifold
         if isequal(lowercase(manifold), "sphere")
             xs[:,1] = [offsetList[1] ? 1+offset : 1-offset, 0, 0]
             xs[:,2] = [0, x[2,2], x[3,2]]
-            for i in 3:length(offsetList)
-                xs[:,i] = x[:,i]
-            end
+            xs[:,3:length(offsetList)] .= x[:,3:length(offsetList)]
 
             for bar in bars
                 xs[:,bar[2]] = offsetList[bar[2]] ? xs[:,bar[1]]*(1+offset)/(1-offset) : xs[:,bar[1]]*(1-offset)/(1+offset)
@@ -41,12 +40,12 @@ struct WeavingOnManifold
                     push!(xvarz, Variable(xs[j,i]))
                     push!(positions, (j,i))
                 catch
+                    continue
                 end
             end
 
             append!(samples, [[offsetList[1] ? 1+offset : 1-offset, 0, 0], [0,0,0]])
             manifoldEquations = [offsetList[i] ? sum( xs[:,i].^2 ) - (1+offset)^2 : sum( xs[:,i].^2 ) - (1-offset)^2 for i in 1:length(offsetList)]
-        
         elseif isequal(lowercase(manifold), "free")
             @var y[1:3]
             F = System([implicitManifold(y)+offset*2*(offsetList[1]-0.5), rand(Float64,3)'*y, y[3]])
@@ -54,16 +53,13 @@ struct WeavingOnManifold
             
             xs[:,1] = sols[1]
             xs[:,2] = [sols[2][1], x[2,2], x[3,2]]
-            for i in 3:length(offsetList)
-                xs[:,i] = x[:,i]
-            end
+            xs[:,3:length(offsetList)] .= x[:,3:length(offsetList)]
 
             append!(barEquations, [sum((xs[:,bar[1]]-xs[:,bar[2]]).^2)-(2*offset)^2 for bar in bars])
             append!(samples, [sols[1],sols[2]])
             append!(xvarz, x[2:3,2]); append!(positions, [(2,2),(3,2)])
             foreach(i->append!(xvarz, x[:,i]), 3:length(offsetList)); foreach(i->append!(positions, [(1,i),(2,i),(3,i)]), 3:length(offsetList))
             manifoldEquations = [implicitManifold(xs[:,i])+offset*2*(offsetList[i]-0.5) for i in 2:length(offsetList)]
-
         else
             throw(error("Only weavings on the sphere are implemented right now!"))
         end
@@ -99,20 +95,15 @@ function toArray(p, Weave::WeavingOnManifold)
 end
 
 function energyFunction(configuration, Weave::WeavingOnManifold)
-    Q = 0
     p = toMatrix(configuration, Weave)
-    for cable in Weave.cables
-        Q += sum( (p[:,cable[1]] - p[:,cable[2]]).^2 )
-    end
-    return Q
+    return sum([ sum( (p[:,cable[1]] - p[:,cable[2]]).^2 ) for cable in Weave.cables])
 end
 
 function plotWeaving(configuration::Vector{Float64}, Weave::WeavingOnManifold)
     p0 = toMatrix(configuration, Weave)
     fig = Figure(size = (1000,1000))
     ax = Axis3(fig[1,1], aspect=(1.,1,1))
-    hidespines!(ax)
-    hidedecorations!(ax)
+    hidespines!(ax); hidedecorations!(ax);
     plot_implicit_surface!(ax, x->x[1]^2+x[2]^2+x[3]^2-1; wireframe=false, transparency=true, color=RGBA(0.5,0.5,0.5,0.6))
     foreach(bar->linesegments!(ax, [Point3f0(p0[:,bar[1]]), Point3f0(p0[:,bar[2]])]; color=:blue, linewidth=8), Weave.bars)
     foreach(cable->linesegments!(ax, [Point3f0(p0[:,cable[1]]), Point3f0(p0[:,cable[2]])]; color=:red, linewidth=8), Weave.cables)
