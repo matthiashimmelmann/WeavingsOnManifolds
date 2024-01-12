@@ -104,7 +104,7 @@ function plotWeaving(configuration::Vector{Float64}, Weave::WeavingOnManifold)
     fig = Figure(size = (1000,1000))
     ax = Axis3(fig[1,1], aspect=(1.,1,1))
     hidespines!(ax); hidedecorations!(ax);
-    plot_implicit_surface!(ax, x->x[1]^2+x[2]^2+x[3]^2-1; wireframe=false, transparency=true, color=RGBA(0.5,0.5,0.5,0.6))
+    plot_implicit_surface!(ax, x->x[1]^2+x[2]^2+x[3]^2-1; wireframe=false, transparency=true, color=RGBA(0.75,0.75,0.75,0.6))
     foreach(bar->linesegments!(ax, [Point3f0(p0[:,bar[1]]), Point3f0(p0[:,bar[2]])]; color=:blue, linewidth=8), Weave.bars)
     foreach(cable->linesegments!(ax, [Point3f0(p0[:,cable[1]]), Point3f0(p0[:,cable[2]])]; color=:red, linewidth=8), Weave.cables)
 
@@ -115,7 +115,7 @@ end
 function test()
     Weave = WeavingsOnManifolds.WeavingOnManifold([false,true,false,true, true,false,true,false, false,true,false,true], [(1,5),(2,11),(3,7),(4,9),(6,10),(8,12)], [(1,2),(2,3),(3,4),(4,1), (5,6),(6,7),(7,8),(8,5), (9,10),(10,11),(11,12),(12,9)], [(1,2,3,4), (5,6,7,8), (9,10,11,12)])
     p0 = [1 0 0; 0 -1 0; -1 0 0; 0 1 0; 1 0 0; 0 0 -1; -1 0 0; 0 0 1; 0 1 0; 0 0 -1; 0 -1 0; 0 0 1]'
-    initialConfiguration = toArray(p0, Weave)
+    initialConfiguration = toArray(p0, Weave) #+ (randn(Float64, length(toArray(p0, Weave))) .- 0.5)*0.001
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
     plotWeaving(q, Weave)
     q = computeOptimalWeaving(q, Weave)
@@ -123,10 +123,9 @@ function test()
 end
 
 function newtonCorrect(q::Vector{Float64}, variables, equations; tol = 1e-8)
-    global damping = 0.5
-	global qnew = q
-	jac = Base.hcat([differentiate(eq, variables) for eq in equations]...)
-    while(norm(evaluate.(equations, variables=>q)) > tol)
+    global qnew, damping = q, 0.5
+	jac = hcat([differentiate(eq, variables) for eq in equations]...)
+    while( norm(evaluate.(equations, variables=>q)) > tol )
 		J = Matrix{Float64}(evaluate.(jac, variables=>q))
 		global qnew = q .- damping*pinv(J)'*evaluate.(equations, variables=>q)
 		if norm(evaluate.(equations, variables=>qnew)) <= norm(evaluate.(equations, variables=>q))
@@ -143,7 +142,7 @@ function computeOptimalWeaving(initialConfiguration::Vector{Float64}, Weave::Wea
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints)
     Q = x->energyFunction(x, Weave)
     G = ConstraintVariety(Weave.coordinateVariables, Weave.constraints, length(Weave.coordinateVariables), length(Weave.coordinateVariables)-length(Weave.constraints))
-    resultmin = findminima(q, 1e-3, G, Q; whichstep="gaussnewtonstep", maxseconds=25)
+    resultmin = findminima(q, 1e-3, G, Q; whichstep="gaussnewtonstep", maxseconds=25, stepdirection="newtonstep")
     return(resultmin.computedpoints[end])
 end
 
