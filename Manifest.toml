@@ -684,7 +684,7 @@ version = "2.9.2"
 
 [[deps.HomotopyOpt]]
 deps = ["ForwardDiff", "HomotopyContinuation", "LinearAlgebra", "Plots", "ProgressBars"]
-git-tree-sha1 = "f722957b97673760b2eb29c90b6a96fd3012e161"
+git-tree-sha1 = "4e93d7162292d2625dfa652483689b0f67a781f4"
 repo-rev = "firstbranch"
 repo-url = "../HomotopyOpt.jl"
 uuid = "8c5e0f79-7402-43d4-9c5c-e1bde87b1895"
