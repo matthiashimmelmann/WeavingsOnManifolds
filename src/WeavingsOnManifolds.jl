@@ -1,9 +1,9 @@
 module WeavingsOnManifolds
-import HomotopyContinuation: Expression, Variable, @var, evaluate, differentiate, System, real_solutions, solve
+import HomotopyOpt.HomotopyContinuation: Expression, Variable, @var, evaluate, differentiate, System, real_solutions, solve
+import HomotopyOpt: ConstraintVariety, findminima
 import LinearAlgebra: pinv, norm, cross
 import Implicit3DPlotting.GLMakiePlottingLibrary: Figure, Axis3, hidespines!, hidedecorations!, Point3f0, scatter!, linesegments!, RGBA
 import Implicit3DPlotting: plot_implicit_surface!
-import HomotopyOpt: ConstraintVariety, findminima
 
 export test, computeOptimalWeaving
 
