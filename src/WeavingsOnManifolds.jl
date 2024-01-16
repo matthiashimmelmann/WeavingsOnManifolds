@@ -107,7 +107,7 @@ struct WeavingOnManifold
         end
         
         totalContactCombinatorics = [[map(t->t[1]==bar[1] ? t : (t[2],t[1]), cables[findall(cable->bar[1] in cable, cables)]), bar, map(t->t[1]==bar[1] ? t : (t[2],t[1]), cables[findall(cable->bar[2] in cable, cables)])] for bar in bars]
-        #angleEquations = angleConstraints ? vcat([[((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]]))-((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])), ((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]]))-((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]]))] for contact in totalContactCombinatorics]...) : angleEquations
+        angleEquations = angleConstraints ? vcat([[((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]]))-((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])), ((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]]))-((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]]))] for contact in totalContactCombinatorics]...) : angleEquations
 
         energyFunction = sum([sum((xs[:,cable[1]] - xs[:,cable[2]]).^2) for cable in cables])
         new(lowercase(manifold), offsetList, offset, Vector{Expression}(vcat(manifoldEquations, barEquations, planeEquations, angleEquations)), xvarz, bars, cables, planes, positions, samples, outsideindices)
@@ -141,7 +141,7 @@ end
 
 function energyFunction(configuration, Weave::WeavingOnManifold)
     p = toMatrix(configuration, Weave)
-    Q = sum([ sum( (p[:,cable[1]] - p[:,cable[2]]).^2 ) for cable in Weave.cables])
+    Q = 2*sum([ sum( (p[:,cable[1]] - p[:,cable[2]]).^2 ) for cable in Weave.cables])
     Q += -sum([ sum( (p[:,t[1]] - p[:,t[2]]).^2 ) for t in Weave.outsideindices])
     return Q
 end
@@ -163,7 +163,7 @@ end
 function test_sphere_a()
     Weave = WeavingsOnManifolds.WeavingOnManifold([false,true,false,true, true,false,true,false, false,true,false,true], [(1,5),(2,11),(3,7),(4,9),(6,10),(8,12)], [(1,2),(2,3),(3,4),(4,1), (5,6),(6,7),(7,8),(8,5), (9,10),(10,11),(11,12),(12,9)], [(1,2,3,4), (5,6,7,8), (9,10,11,12)])
     p0 = [1 0 0; 0 -1 0; -1 0 0; 0 1 0; 1 0 0; 0 0 -1; -1 0 0; 0 0 1; 0 1 0; 0 0 -1; 0 -1 0; 0 0 1]'
-    initialConfiguration = toArray(p0, Weave) + (randn(Float64, length(toArray(p0, Weave))) .- 0.5)*0.15
+    initialConfiguration = toArray(p0, Weave) #+ (randn(Float64, length(toArray(p0, Weave))) .- 0.5)*0.05
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
     plotWeaving(q, Weave)
     q = computeOptimalWeaving(q, Weave)
@@ -251,6 +251,6 @@ function computeOptimalWeaving(initialConfiguration::Vector{Float64}, Weave::Wea
     return(resultmin.computedpoints[end])
 end
 
-test_sphere_b()
+test_torus_trefoil()
 #test_torus_trefoil()
 end
