@@ -683,8 +683,8 @@ uuid = "f213a82b-91d6-5c5d-acf7-10f1c761b327"
 version = "2.9.2"
 
 [[deps.HomotopyOpt]]
-deps = ["ForwardDiff", "HomotopyContinuation", "LinearAlgebra", "Plots", "ProgressBars"]
-git-tree-sha1 = "4e93d7162292d2625dfa652483689b0f67a781f4"
+deps = ["ForwardDiff", "HomotopyContinuation", "LinearAlgebra", "Plots"]
+git-tree-sha1 = "e3f88e32e42593d4f9ee8573ae45eac83c062688"
 repo-rev = "firstbranch"
 repo-url = "../HomotopyOpt.jl"
 uuid = "8c5e0f79-7402-43d4-9c5c-e1bde87b1895"
@@ -1497,12 +1497,6 @@ uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 [[deps.Profile]]
 deps = ["Printf"]
 uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
-
-[[deps.ProgressBars]]
-deps = ["Printf"]
-git-tree-sha1 = "b437cdb0385ed38312d91d9c00c20f3798b30256"
-uuid = "49802e3a-d2f1-5c88-81d8-b72133a6f568"
-version = "1.5.1"
 
 [[deps.ProgressMeter]]
 deps = ["Distributed", "Printf"]
