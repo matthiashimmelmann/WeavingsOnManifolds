@@ -70,7 +70,7 @@ struct WeavingOnManifold
 
             samples = isempty(samples) ? append!(samples, [offsetList[1] ? (1+offset) * [ 1,0,0] : (1-offset) * [ 1,0,0]]) : samples
             manifoldEquations = [offsetList[bar[1]] ? sum( xs[:,bar[1]].^2 ) - (1+offset)^2 : sum( xs[:,bar[1]].^2 ) - (1-offset)^2 for bar in bars]
-            planeEquations = vcat([[cross(xs[:,plane[2]]-xs[:,plane[1]], xs[:,plane[3]]-xs[:,plane[2]])'*(xs[:,plane[el>length(plane) ? 1 : el]]-xs[:,plane[el-1]]) for el in 4:length(plane)+1] for plane in planes]...)
+            planeEquations = vcat([[cross(xs[:,plane[2]]-xs[:,plane[1]], xs[:,plane[4]]-xs[:,plane[3]])'*(xs[:,plane[el>length(plane) ? 1 : el]]-xs[:,plane[el-1]]) for el in vcat(3,5:length(plane)+1)] for plane in planes]...)
         elseif isequal(lowercase(manifold), "torus")
             xs[:,1] = [1, 0, offsetList[1] ? 0.5+offset : 0.5+offset]
             #xs[:,2] = [torusknot[1] ? cos(2*pi/torusknot[2])*x[2,2] : 0, torusknot[1] ? sin(2*pi/torusknot[2])*x[2,2] : x[2,2], x[3,2]]
@@ -107,7 +107,7 @@ struct WeavingOnManifold
         end
         
         totalContactCombinatorics = [[map(t->t[1]==bar[1] ? t : (t[2],t[1]), cables[findall(cable->bar[1] in cable, cables)]), bar, map(t->t[1]==bar[1] ? t : (t[2],t[1]), cables[findall(cable->bar[2] in cable, cables)])] for bar in bars]
-        angleEquations = angleConstraints ? vcat([[((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]]))-((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])), ((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]]))-((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]]))] for contact in totalContactCombinatorics]...) : angleEquations
+        #=angleEquations = angleConstraints ? vcat([[((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]]))-((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])), ((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]]))-((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]]))] for contact in totalContactCombinatorics]...) : angleEquations=#
 
         energyFunction = sum([sum((xs[:,cable[1]] - xs[:,cable[2]]).^2) for cable in cables])
         new(lowercase(manifold), offsetList, offset, Vector{Expression}(vcat(manifoldEquations, barEquations, planeEquations, angleEquations)), xvarz, bars, cables, planes, positions, samples, outsideindices)
@@ -146,7 +146,7 @@ function energyFunction(configuration, Weave::WeavingOnManifold)
     return Q
 end
 
-function plotWeaving(configuration::Vector{Float64}, Weave::WeavingOnManifold)
+function plotWeaving(configuration::Vector{Float64}, Weave::WeavingOnManifold; colorscheme=[])
     p0 = toMatrix(configuration, Weave)
     fig = Figure(size = (1000,1000))
     ax = Axis3(fig[1,1], aspect=(1.,1,1))
@@ -154,7 +154,20 @@ function plotWeaving(configuration::Vector{Float64}, Weave::WeavingOnManifold)
     implicit_manifold = x->(Weave.manifold == "torus") ? (0.75 + (x[1]^2+x[2]^2+x[3]^2))^2 - 4*(x[1]^2+x[2]^2) : x[1]^2+x[2]^2+x[3]^2-1
     plot_implicit_surface!(ax, implicit_manifold; wireframe=false, transparency=true, color=RGBA(0.75,0.75,0.75,0.6), samples = (75,75,75))
     foreach(bar->linesegments!(ax, [Point3f0(p0[:,bar[1]]), Point3f0(p0[:,bar[2]])]; color=:blue, linewidth=8), Weave.bars)
-    foreach(cable->linesegments!(ax, [Point3f0(p0[:,cable[1]]), Point3f0(p0[:,cable[2]])]; color=:red, linewidth=8), Weave.cables)
+
+    if isempty(colorscheme)
+        foreach(cable->linesegments!(ax, [Point3f0(p0[:,cable[1]]), Point3f0(p0[:,cable[2]])]; color=:red, linewidth=8), Weave.cables)
+    else
+        cableJoints = []
+        for cable in Weave.cables
+            if !any(t->(cable[1] in t)||(cable[2] in t), cableJoints)
+                push!(cableJoints, [cable[1],cable[2]])
+            else
+                append!(cableJoints[findfirst(t->(cable[1] in t)||(cable[2] in t), cableJoints)], [cable[1],cable[2]])
+            end
+        end
+        foreach(cable->linesegments!(ax, [Point3f0(p0[:,cable[1]]), Point3f0(p0[:,cable[2]])]; color=colorscheme[findfirst(t->cable[1] in t, cableJoints)], linewidth=8), Weave.cables)
+    end
 
     scatter!(ax, [Point3f0(p0[:,i]) for i in 1:size(p0)[2]]; color=:black, markersize=35)
     display(fig)
@@ -208,11 +221,51 @@ function test_sphere_b()
         cos(10*pi/6) 0 sin(10*pi/6); 0 sqrt(1/2) -sqrt(1/2); cos(4*pi/6) sin(4*pi/6) 0; cos(4*pi/6) 0 sin(4*pi/6); 0 -sqrt(1/2) sqrt(1/2); cos(10*pi/6) sin(10*pi/6) 0;
         cos(8*pi/6) 0 sin(8*pi/6); 0 sqrt(1/2) -sqrt(1/2); cos(2*pi/6) sin(2*pi/6) 0; cos(2*pi/6) 0 sin(2*pi/6); 0 -sqrt(1/2) sqrt(1/2); cos(8*pi/6) sin(8*pi/6) 0]'
     initialConfiguration = toArray(p0,Weave)
+
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
-    plotWeaving(q, Weave)
     q = computeOptimalWeaving(q, Weave)
-    plotWeaving(q, Weave)
+    plotWeaving(q, Weave; colorscheme=[:yellow, :green, :cyan, :purple])
 end
+
+function test_sphere_b2()
+    Weave = WeavingsOnManifolds.WeavingOnManifold([true,false,true,false,true,false, false,true,false,true,false,true, true,false,true,false,true,false, false,true,false,true,false,true], [(4, 10), (14, 20), (6, 24), (12, 19), (2, 15), (5, 18), (11, 13), (17, 23), (3, 21), (1, 7), (8, 16), (9, 22)], [(1,2),(2,3),(3,4),(4,5),(5,6),(6,1), (7,8),(8,9),(9,10),(10,11),(11,12),(12,7), (13,14),(14,15),(15,16),(16,17),(17,18),(18,13), (19,20),(20,21),(21,22),(22,23),(23,24),(24,19)], [(1,2,3,4,5,6), (7,8,9,10,11,12), (13,14,15,16,17,18), (19,20,21,22,23,24)])
+    p0 = [1 0 0; cos(2*pi/6) sin(2*pi/6) 0; cos(4*pi/6) sin(4*pi/6) 0; cos(6*pi/6) sin(6*pi/6) 0; cos(8*pi/6) sin(8*pi/6) 0; cos(10*pi/6) sin(10*pi/6) 0;
+        1 0 0; cos(2*pi/6) 0 sin(2*pi/6); cos(4*pi/6) 0 sin(4*pi/6); cos(6*pi/6) 0 sin(6*pi/6); cos(8*pi/6) 0 sin(8*pi/6); cos(10*pi/6) 0 sin(10*pi/6);
+        cos(8*pi/6) 0 sin(8*pi/6); 0 sqrt(1/2) -sqrt(1/2); cos(2*pi/6) sin(2*pi/6) 0; cos(2*pi/6) 0 sin(2*pi/6); 0 -sqrt(1/2) sqrt(1/2); cos(8*pi/6) sin(8*pi/6) 0;
+        cos(10*pi/6) 0 sin(10*pi/6); 0 sqrt(1/2) -sqrt(1/2); cos(4*pi/6) sin(4*pi/6) 0; cos(4*pi/6) 0 sin(4*pi/6); 0 -sqrt(1/2) sqrt(1/2); cos(10*pi/6) sin(10*pi/6) 0;]'
+    initialConfiguration = toArray(p0,Weave)
+    #=bars = []  
+    for i in 1:size(p0)[2], j in i+1:size(p0)[2]
+        if norm(p0[:,i]-p0[:,j])<=10^(-10)
+            push!(bars,(i,j))
+        end
+    end 
+    println(collect(Set(bars)))=#
+
+    q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
+    q = computeOptimalWeaving(q, Weave)
+    plotWeaving(q, Weave; colorscheme=[:yellow, :green, :cyan, :purple])
+end
+
+function test_sphere_c()
+    Weave = WeavingsOnManifolds.WeavingOnManifold([true,false,true,false,true,false,true,false,true,false, false,true,false,true,false,true,false,true,false,true, false,true,false,true,false,true,false,true,false,true, true,false,true,false,true,false,true,false,true,false, true,false,true,false,true,false,true,false,true,false, false,true,false,true,false,true,false,true,false,true], [(5, 59), (14, 23), (19, 28), (25, 47), (34, 45), (41, 51), (2, 43), (35, 55), (24, 57), (3, 21), (13, 33), (12, 44), (6, 16), (39, 50), (27, 37), (29, 52), (1, 11), (18, 38), (7, 48), (20, 53), (9, 36), (17, 49), (40, 60), (30, 42), (10, 54), (22, 32), (15, 58), (46, 56), (8, 26), (4, 31)], 
+                                            [(1,2),(2,3),(3,4),(4,5),(5,6),(6,7),(7,8),(8,9),(9,10),(10,1), (11,12),(12,13),(13,14),(14,15),(15,16),(16,17),(17,18),(18,19),(19,20),(20,11), (21,22),(22,23),(23,24),(24,25),(25,26),(26,27),(27,28),(28,29),(29,30),(30,21), (31,32),(32,33),(33,34),(34,35),(35,36),(36,37),(37,38),(38,39),(39,40),(40,31), (41,42),(42,43),(43,44),(44,45),(45,46),(46,47),(47,48),(48,49),(49,50),(50,41), (51,52),(52,53),(53,54),(54,55),(55,56),(56,57),(57,58),(58,59),(59,60),(60,51)], 
+                                            [(1,2,3,4,5,6,7,8,9,10), (11,12,13,14,15,16,17,18,19,20), (21,22,23,24,25,26,27,28,29,30), (31,32,33,34,35,36,37,38,39,40), (41,42,43,44,45,46,47,48,49,50), (51,52,53,54,55,56,57,58,59,60),])
+    p0 = [1 0 0; cos(2*pi/10) sin(2*pi/10) 0; cos(4*pi/10) sin(4*pi/10) 0; cos(6*pi/10) sin(6*pi/10) 0; cos(8*pi/10) sin(8*pi/10) 0; cos(10*pi/10) sin(10*pi/10) 0; cos(12*pi/10) sin(12*pi/10) 0; cos(14*pi/10) sin(14*pi/10) 0; cos(16*pi/10) sin(16*pi/10) 0; cos(18*pi/10) sin(18*pi/10) 0;
+          1 0 0; cos(2*pi/10) 0 sin(2*pi/10); cos(4*pi/10) 0 sin(4*pi/10); cos(6*pi/10) 0 sin(6*pi/10); cos(8*pi/10) 0 sin(8*pi/10); cos(10*pi/10) 0 sin(10*pi/10); cos(12*pi/10) 0 sin(12*pi/10); cos(14*pi/10) 0 sin(14*pi/10); cos(16*pi/10) 0 sin(16*pi/10); cos(18*pi/10) 0 sin(18*pi/10);
+          cos(4*pi/10) sin(4*pi/10) 0; 0 sqrt(1/2) sqrt(1/2); cos(6*pi/10) 0 sin(6*pi/10); -1/2 -sqrt(1/8) sqrt(5/8); -0.4 -sqrt(0.5) sqrt(0.34); cos(14*pi/10) sin(14*pi/10) 0; 0 -sqrt(1/2) -sqrt(1/2); cos(16*pi/10) 0 sin(16*pi/10); 1/2 sqrt(1/8) -sqrt(5/8); 1/2 sqrt(3/8) -sqrt(3/8);
+          cos(6*pi/10) sin(6*pi/10) 0; 0 sqrt(1/2) sqrt(1/2); cos(4*pi/10) 0 sin(4*pi/10); 1/2 -sqrt(1/8) sqrt(5/8); 0.4 -sqrt(0.5) sqrt(0.34); cos(16*pi/10) sin(16*pi/10) 0; 0 -sqrt(1/2) -sqrt(1/2); cos(14*pi/10) 0 sin(14*pi/10); -1/2 sqrt(1/8) -sqrt(5/8); -1/2 sqrt(3/8) -sqrt(3/8);
+          0 sqrt(3/8) -sqrt(5/8); 1/2 sqrt(3/8) -sqrt(3/8); cos(2*pi/10) sin(2*pi/10) 0; cos(2*pi/10) 0 sin(2*pi/10); 1/2 -sqrt(1/8) sqrt(5/8); 0 -sqrt(3/8) sqrt(5/8); -0.4 -sqrt(0.5) sqrt(0.34); cos(12*pi/10) sin(12*pi/10) 0; cos(12*pi/10) 0 sin(12*pi/10); -1/2 sqrt(1/8) -sqrt(5/8);
+          0 sqrt(3/8) -sqrt(5/8); 1/2 sqrt(1/8) -sqrt(5/8); cos(18*pi/10) 0 sin(18*pi/10); cos(18*pi/10) sin(18*pi/10) 0; 0.4 -sqrt(0.5) sqrt(0.34); 0 -sqrt(3/8) sqrt(5/8); -1/2 -sqrt(1/8) sqrt(5/8); cos(8*pi/10) 0 sin(8*pi/10); cos(8*pi/10) sin(8*pi/10) 0; -1/2 sqrt(3/8) -sqrt(3/8)
+    ]'
+
+    initialConfiguration = toArray(p0,Weave)
+    q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
+    plotWeaving(q, Weave; colorscheme=[:yellow,:cyan,:purple,:green,:blue,:red])
+    q = computeOptimalWeaving(q, Weave)
+
+end
+
 
 function test_torus_trefoil()
     Weave = WeavingsOnManifolds.WeavingOnManifold([true, true, true, true, true, true], [(1,4), (2,5), (3,6)], [(1,2), (2,3), (3,4), (4,5), (5,6), (6,1)], []; manifold="torus", offset=0.)
@@ -247,10 +300,10 @@ function computeOptimalWeaving(initialConfiguration::Vector{Float64}, Weave::Wea
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints)
     Q = x->energyFunction(x, Weave)
     G = ConstraintVariety(Weave.coordinateVariables, Weave.constraints, length(Weave.coordinateVariables), length(Weave.coordinateVariables)-length(Weave.constraints))
-    resultmin = findminima(q, 1e-3, G, Q; whichstep="gaussnewtonstep", maxseconds=100, stepdirection = "gradientdescent")
+    resultmin = findminima(q, 1e-3, G, Q; whichstep="gaussnewtonstep", maxseconds=1000, stepdirection = "gradientdescent")
     return(resultmin.computedpoints[end])
 end
 
-test_torus_trefoil()
+test_sphere_a()
 #test_torus_trefoil()
 end
