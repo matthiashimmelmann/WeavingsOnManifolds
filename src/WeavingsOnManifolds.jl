@@ -22,7 +22,7 @@ struct WeavingOnManifold
     samples
     outsideindices
 
-    function WeavingOnManifold(offsetList::Vector{Bool}, bars::Vector, cables::Vector, planes::Vector; manifold="sphere", implicitManifold=x->x[1]^2+x[2]^2+x[3]^2-1, offset=0.1, torusknot=(true, 3), angleConstraints=true, samples=[])
+    function WeavingOnManifold(offsetList::Vector{Bool}, bars::Vector, cables::Vector, planes::Vector; manifold="sphere", implicitManifold=x->x[1]^2+x[2]^2+x[3]^2-1, offset=0.1, torusknot=(true, 3), angleConstraints=false, samples=[])
         (offset<=0.5 && offset>=0.05) || @warn "We recommend an offset between 5% and 50%."
         manifold!="free" || typeof(implicitManifold([1.,2,3]))==Float64
 
@@ -32,21 +32,14 @@ struct WeavingOnManifold
         manifoldEquations, barEquations, angleEquations, planeEquations, xvarz, positions, outsideindices, cableJoints = Vector{Expression}([]), Vector{Expression}([]), Vector{Expression}([]), Vector{Expression}([]), Vector{Variable}([]), [], [], [], []
         
         
-        for cable in cables
-            if !any(t->(cable[1] in t)||(cable[2] in t), cableJoints)
-                push!(cableJoints, [cable[1],cable[2]])
-            else
-                append!(cableJoints[findfirst(t->(cable[1] in t)||(cable[2] in t), cableJoints)], [cable[1],cable[2]])
-            end
-        end
-        cableJoints = [collect(Set(joints)) for joints in cableJoints]
-
+        
         for i in findall(t->t,offsetList), j in findall(t->t,offsetList)
             if j<=i
                 continue
             end
             push!(outsideindices, (i,j))
         end
+        display(outsideindices)
 
         if isequal(lowercase(manifold), "sphere")
             #xs[:,1] = [offsetList[1] ? 1+offset : 1-offset, 0, 0]
@@ -107,7 +100,7 @@ struct WeavingOnManifold
         end
         
         totalContactCombinatorics = [[map(t->t[1]==bar[1] ? t : (t[2],t[1]), cables[findall(cable->bar[1] in cable, cables)]), bar, map(t->t[1]==bar[1] ? t : (t[2],t[1]), cables[findall(cable->bar[2] in cable, cables)])] for bar in bars]
-        #=angleEquations = angleConstraints ? vcat([[((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]]))-((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])), ((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]]))-((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]]))] for contact in totalContactCombinatorics]...) : angleEquations=#
+        angleEquations = angleConstraints ? vcat([[((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]]))-((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])), ((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]]))-((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]]))] for contact in totalContactCombinatorics]...) : angleEquations
 
         energyFunction = sum([sum((xs[:,cable[1]] - xs[:,cable[2]]).^2) for cable in cables])
         new(lowercase(manifold), offsetList, offset, Vector{Expression}(vcat(manifoldEquations, barEquations, planeEquations, angleEquations)), xvarz, bars, cables, planes, positions, samples, outsideindices)
@@ -141,8 +134,8 @@ end
 
 function energyFunction(configuration, Weave::WeavingOnManifold)
     p = toMatrix(configuration, Weave)
-    Q = 2*sum([ sum( (p[:,cable[1]] - p[:,cable[2]]).^2 ) for cable in Weave.cables])
-    Q += -sum([ sum( (p[:,t[1]] - p[:,t[2]]).^2 ) for t in Weave.outsideindices])
+    Q = sum([ sum( (p[:,cable[1]] - p[:,cable[2]]).^2 ) for cable in Weave.cables])
+    Q += sum([ 1/sum( (p[:,t[1]] - p[:,t[2]]).^2 ) for t in Weave.outsideindices])
     return Q
 end
 
@@ -250,7 +243,7 @@ end
 function test_sphere_c()
     Weave = WeavingsOnManifolds.WeavingOnManifold([true,false,true,false,true,false,true,false,true,false, false,true,false,true,false,true,false,true,false,true, false,true,false,true,false,true,false,true,false,true, true,false,true,false,true,false,true,false,true,false, true,false,true,false,true,false,true,false,true,false, false,true,false,true,false,true,false,true,false,true], [(5, 59), (14, 23), (19, 28), (25, 47), (34, 45), (41, 51), (2, 43), (35, 55), (24, 57), (3, 21), (13, 33), (12, 44), (6, 16), (39, 50), (27, 37), (29, 52), (1, 11), (18, 38), (7, 48), (20, 53), (9, 36), (17, 49), (40, 60), (30, 42), (10, 54), (22, 32), (15, 58), (46, 56), (8, 26), (4, 31)], 
                                             [(1,2),(2,3),(3,4),(4,5),(5,6),(6,7),(7,8),(8,9),(9,10),(10,1), (11,12),(12,13),(13,14),(14,15),(15,16),(16,17),(17,18),(18,19),(19,20),(20,11), (21,22),(22,23),(23,24),(24,25),(25,26),(26,27),(27,28),(28,29),(29,30),(30,21), (31,32),(32,33),(33,34),(34,35),(35,36),(36,37),(37,38),(38,39),(39,40),(40,31), (41,42),(42,43),(43,44),(44,45),(45,46),(46,47),(47,48),(48,49),(49,50),(50,41), (51,52),(52,53),(53,54),(54,55),(55,56),(56,57),(57,58),(58,59),(59,60),(60,51)], 
-                                            [(1,2,3,4,5,6,7,8,9,10), (11,12,13,14,15,16,17,18,19,20), (21,22,23,24,25,26,27,28,29,30), (31,32,33,34,35,36,37,38,39,40), (41,42,43,44,45,46,47,48,49,50), (51,52,53,54,55,56,57,58,59,60),])
+                                            [(1,2,3,4,5,6,7,8,9,10), (11,12,13,14,15,16,17,18,19,20), (21,22,23,24,25,26,27,28,29,30), (31,32,33,34,35,36,37,38,39,40), (41,42,43,44,45,46,47,48,49,50), (51,52,53,54,55,56,57,58,59,60)]; offset=0.1)
     p0 = [1 0 0; cos(2*pi/10) sin(2*pi/10) 0; cos(4*pi/10) sin(4*pi/10) 0; cos(6*pi/10) sin(6*pi/10) 0; cos(8*pi/10) sin(8*pi/10) 0; cos(10*pi/10) sin(10*pi/10) 0; cos(12*pi/10) sin(12*pi/10) 0; cos(14*pi/10) sin(14*pi/10) 0; cos(16*pi/10) sin(16*pi/10) 0; cos(18*pi/10) sin(18*pi/10) 0;
           1 0 0; cos(2*pi/10) 0 sin(2*pi/10); cos(4*pi/10) 0 sin(4*pi/10); cos(6*pi/10) 0 sin(6*pi/10); cos(8*pi/10) 0 sin(8*pi/10); cos(10*pi/10) 0 sin(10*pi/10); cos(12*pi/10) 0 sin(12*pi/10); cos(14*pi/10) 0 sin(14*pi/10); cos(16*pi/10) 0 sin(16*pi/10); cos(18*pi/10) 0 sin(18*pi/10);
           cos(4*pi/10) sin(4*pi/10) 0; 0 sqrt(1/2) sqrt(1/2); cos(6*pi/10) 0 sin(6*pi/10); -1/2 -sqrt(1/8) sqrt(5/8); -0.4 -sqrt(0.5) sqrt(0.34); cos(14*pi/10) sin(14*pi/10) 0; 0 -sqrt(1/2) -sqrt(1/2); cos(16*pi/10) 0 sin(16*pi/10); 1/2 sqrt(1/8) -sqrt(5/8); 1/2 sqrt(3/8) -sqrt(3/8);
@@ -296,7 +289,7 @@ function newtonCorrect(q::Vector{Float64}, variables, equations; tol = 1e-8)
 	return q
 end
 
-function computeOptimalWeaving(initialConfiguration::Vector{Float64}, Weave::WeavingOnManifold; tol = 1e-4)
+function computeOptimalWeaving(initialConfiguration::Vector{Float64}, Weave::WeavingOnManifold; tol = 1e-3)
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints)
     Q = x->energyFunction(x, Weave)
     G = ConstraintVariety(Weave.coordinateVariables, Weave.constraints, length(Weave.coordinateVariables), length(Weave.coordinateVariables)-length(Weave.constraints))
@@ -304,6 +297,6 @@ function computeOptimalWeaving(initialConfiguration::Vector{Float64}, Weave::Wea
     return(resultmin.computedpoints[end])
 end
 
-test_sphere_a()
+test_sphere_c()
 #test_torus_trefoil()
 end
