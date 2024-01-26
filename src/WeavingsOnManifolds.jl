@@ -21,15 +21,17 @@ struct WeavingOnManifold
     variablePositions
     samples
     outsideindices
+    periodicBoundary
 
-    function WeavingOnManifold(offsetList::Vector{Bool}, bars::Vector, cables::Vector, planes::Vector; manifold="sphere", implicitManifold=x->x[1]^2+x[2]^2+x[3]^2-1, offset=0.1, torusknot=(true, 3), angleConstraints=false, samples=[])
+    function WeavingOnManifold(offsetList::Vector{Bool}, bars::Vector, cables::Vector, planes::Vector; manifold="sphere", implicitManifold=x->x[1]^2+x[2]^2+x[3]^2-1, offset=0.1, torusknot=(true, 3), angleConstraints=false, samples=[], PBC=[])
         (offset<=0.5 && offset>=0.05) || @warn "We recommend an offset between 5% and 50%."
         manifold!="free" || typeof(implicitManifold([1.,2,3]))==Float64
+        ([i for i in 1:length(offsetList)] == sort(vcat([bar[1] for bar in bars], [bar[2] for bar in bars])) && (Set(1:length(offsetList)) == Set(vcat([cable[1] for cable in cables], [cable[2] for cable in cables])))) || throw(error("Cables and Bars don't cover every vertex"))
 
         @var x[1:3, 1:length(offsetList)]
 
         xs = zeros(Expression,(3,length(offsetList)))
-        manifoldEquations, barEquations, angleEquations, planeEquations, xvarz, positions, outsideindices, cableJoints = Vector{Expression}([]), Vector{Expression}([]), Vector{Expression}([]), Vector{Expression}([]), Vector{Variable}([]), [], [], [], []
+        manifoldEquations, barEquations, angleEquations, planeEquations, periodicBoundaryConditions, xvarz, positions, outsideindices, cableJoints = Vector{Expression}([]), Vector{Expression}([]), Vector{Expression}([]), Vector{Expression}([]), Vector{Expression}([]), Vector{Variable}([]), [], [], []
         
         
         
@@ -39,7 +41,6 @@ struct WeavingOnManifold
             end
             push!(outsideindices, (i,j))
         end
-        display(outsideindices)
 
         if isequal(lowercase(manifold), "sphere")
             #xs[:,1] = [offsetList[1] ? 1+offset : 1-offset, 0, 0]
@@ -64,6 +65,92 @@ struct WeavingOnManifold
             samples = isempty(samples) ? append!(samples, [offsetList[1] ? (1+offset) * [ 1,0,0] : (1-offset) * [ 1,0,0]]) : samples
             manifoldEquations = [offsetList[bar[1]] ? sum( xs[:,bar[1]].^2 ) - (1+offset)^2 : sum( xs[:,bar[1]].^2 ) - (1-offset)^2 for bar in bars]
             planeEquations = vcat([[cross(xs[:,plane[2]]-xs[:,plane[1]], xs[:,plane[4]]-xs[:,plane[3]])'*(xs[:,plane[el>length(plane) ? 1 : el]]-xs[:,plane[el-1]]) for el in vcat(3,5:length(plane)+1)] for plane in planes]...)
+        elseif isequal(lowercase(manifold), "flattorus")
+            xs[:,1] = samples[1]+[0,0,offsetList[1] ? offset : -offset]
+            xs[:,2:length(offsetList)] .= x[:,2:length(offsetList)]
+            bars = map(bar->offsetList[bar[1]] ? bar : (bar[2],bar[1]), bars)
+
+            for i in 1:size(xs)[2], j in 1:size(xs)[1]
+                push!(xvarz, x[j,i])
+                push!(positions, (j,i))
+            end
+
+            outsideindices = [(1,5), (5,9), (5,7), (3,5), (13,11),(13,17),(11,15),(15,17)]
+
+            for cond in PBC
+                if offsetList[cond[1]]    
+                    xs[Float64(cond[3][1])==1. ? 1 : 2, cond[1]] = 1.
+                    index1 = findfirst(pos->pos[2]==cond[1]&&((Float64(cond[3][1])==1. && pos[1]==1)||(Float64(cond[3][2])==1. && pos[1]==2)), positions)
+                    deleteat!(positions,index1); deleteat!(xvarz,index1)
+
+                    xs[:, cond[2]] = xs[:, cond[1]]-cond[3]
+                    index2 = findfirst(pos->pos[2]==cond[2]&&pos[1]==1, positions)
+                    if index2!=nothing
+                        deleteat!(positions,index2); deleteat!(xvarz,index2)
+                    end
+                    
+                    index3 = findfirst(pos->pos[2]==cond[2]&&pos[1]==2, positions)
+                    if index3!=nothing
+                        deleteat!(positions,index3); deleteat!(xvarz,index3)
+                    end
+                    index4 = findfirst(pos->pos[2]==cond[2]&&pos[1]==3, positions)
+                    if index4!=nothing
+                        deleteat!(positions,index4); deleteat!(xvarz,index4)
+                    end 
+                else
+                    top_bar1 = bars[findfirst(t->cond[1] in t, bars)][1]
+                    println(cond[1],", ",top_bar1)
+                    xs[Float64(cond[3][1])==1. ? 1 : 2, top_bar1] = 1.
+                    index1 = findfirst(pos->pos[2]==top_bar1&&((Float64(cond[3][1])==1. && pos[1]==1)||(Float64(cond[3][2])==1. && pos[1]==2)), positions)
+                    if index1!=nothing
+                        deleteat!(positions,index1); deleteat!(xvarz,index1)
+                    end
+
+                    top_bar2 = bars[findfirst(t->cond[2] in t, bars)][1]
+                    xs[:, top_bar2] = xs[:, top_bar1]-cond[3]
+                    index2 = findfirst(pos->pos[2]==top_bar2&&pos[1]==1, positions)
+                    if index2!=nothing
+                        deleteat!(positions,index2); deleteat!(xvarz,index2)
+                    end
+                    
+                    index3 = findfirst(pos->pos[2]==top_bar2&&pos[1]==2, positions)
+                    if index3!=nothing
+                        deleteat!(positions,index3); deleteat!(xvarz,index3)
+                    end
+                    index4 = findfirst(pos->pos[2]==top_bar2&&pos[1]==3, positions)
+                    if index4!=nothing
+                        deleteat!(positions,index4); deleteat!(xvarz,index4)
+                    end 
+                end
+            end
+
+            for bar in bars
+                index1 = findfirst(pos->pos[2]==bar[2]&&pos[1]==1, positions)
+
+                if index1!=nothing
+                    deleteat!(positions,index1); deleteat!(xvarz,index1)
+                    xs[1,bar[2]] = xs[1,bar[1]]
+                end
+
+                index2 = findfirst(pos->pos[2]==bar[2]&&pos[1]==2, positions)
+                if index2!=nothing
+                    deleteat!(positions,index2); deleteat!(xvarz,index2)
+                    xs[2,bar[2]] = xs[2,bar[1]]
+                end
+
+                index3 = findfirst(pos->pos[2]==bar[2]&&pos[1]==3, positions)
+                if index3!=nothing
+                    deleteat!(positions,index3); deleteat!(xvarz,index3)
+                    xs[3,bar[2]] = xs[3,bar[1]]-2*offset
+                end
+            end
+
+            #=for cond in PBC
+                append!(periodicBoundaryConditions, Vector{Expression}(xs[:,cond[1]]-xs[:,cond[2]]-cond[3]))
+            end=#
+
+            samples = [samples[1]+[0,0, offsetList[1] ? offset : -offset]]
+            manifoldEquations = [offsetList[i] ? xs[3,i]-offset : xs[3,i]+offset for i in 1:length(offsetList)]
         elseif isequal(lowercase(manifold), "torus")
             xs[:,1] = [1, 0, offsetList[1] ? 0.5+offset : 0.5+offset]
             #xs[:,2] = [torusknot[1] ? cos(2*pi/torusknot[2])*x[2,2] : 0, torusknot[1] ? sin(2*pi/torusknot[2])*x[2,2] : x[2,2], x[3,2]]
@@ -86,7 +173,7 @@ struct WeavingOnManifold
 
             samples = isempty(samples) ? append!(samples, [[1, 0, offsetList[1] ? 0.5+offset : 0.5+offset], [0,0.5,0]]) : samples
             manifoldEquations = [offsetList[i] ? ((1-(0.5+offset)^2)+sum(xs[:,i].^2))^2-4*sum(xs[1:2,i].^2) : ((1-(0.5-offset)^2)+sum(xs[:,i].^2))^2-4*sum(xs[1:2,i].^2) for i in 1:length(offsetList)]
-        elseif isequal(lowercase(manifold), "free")            
+        elseif isequal(lowercase(manifold), "free")
             xs[:,1] = sols[1]
             xs[:,2:length(offsetList)] .= x[:,2:length(offsetList)]
 
@@ -100,10 +187,10 @@ struct WeavingOnManifold
         end
         
         totalContactCombinatorics = [[map(t->t[1]==bar[1] ? t : (t[2],t[1]), cables[findall(cable->bar[1] in cable, cables)]), bar, map(t->t[1]==bar[1] ? t : (t[2],t[1]), cables[findall(cable->bar[2] in cable, cables)])] for bar in bars]
-        angleEquations = angleConstraints ? vcat([[((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]]))-((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])), ((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]]))-((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]]))] for contact in totalContactCombinatorics]...) : angleEquations
+        #angleEquations = angleConstraints ? vcat([[((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]]))-((xs[:,contact[1][2][2]]-xs[:,contact[1][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])'*(xs[:,contact[1][1][1]]-xs[:,contact[1][1][2]])), ((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]]))-((xs[:,contact[3][2][2]]-xs[:,contact[3][2][1]])'*(xs[:,contact[2][1]]-xs[:,contact[2][2]]))^2*((xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]])'*(xs[:,contact[3][1][1]]-xs[:,contact[3][1][2]]))] for contact in totalContactCombinatorics]...) : angleEquations
 
         energyFunction = sum([sum((xs[:,cable[1]] - xs[:,cable[2]]).^2) for cable in cables])
-        new(lowercase(manifold), offsetList, offset, Vector{Expression}(vcat(manifoldEquations, barEquations, planeEquations, angleEquations)), xvarz, bars, cables, planes, positions, samples, outsideindices)
+        new(lowercase(manifold), offsetList, offset, filter(t->t!=0,Vector{Expression}(vcat(manifoldEquations, barEquations, planeEquations, angleEquations, periodicBoundaryConditions))), Vector{Variable}(xvarz), bars, cables, planes, positions, samples, outsideindices, PBC)
     end
 end
 
@@ -120,6 +207,22 @@ function toMatrix(configuration, Weave::WeavingOnManifold)
     if Weave.manifold=="sphere"
         for bar in Weave.bars
             p0[:,bar[2]] = Weave.offsetList[bar[2]] ? p0[:,bar[1]]*(1+Weave.offset)/(1-Weave.offset) : p0[:,bar[1]]*(1-Weave.offset)/(1+Weave.offset)
+        end
+    elseif Weave.manifold=="flattorus"
+        for cond in Weave.periodicBoundary
+            if Weave.offsetList[cond[1]]
+                p0[Float64(cond[3][1])==1. ? 1 : 2, cond[1]] = 1.
+                p0[:, cond[2]] = p0[:, cond[1]]-cond[3]
+            else
+                top_bar1 = Weave.bars[findfirst(t->cond[1] in t, Weave.bars)][1]
+                p0[Float64(cond[3][1])==1. ? 1 : 2, top_bar1] = 1.
+                top_bar2 = Weave.bars[findfirst(t->cond[2] in t, Weave.bars)][1]
+                p0[:, top_bar2] = p0[:, top_bar1]-cond[3]
+            end            
+        end
+
+        for bar in Weave.bars
+            p0[:,bar[2]] = p0[:,bar[1]]-[0,0,2*Weave.offset]
         end
     end
     return(p0)
@@ -144,8 +247,8 @@ function plotWeaving(configuration::Vector{Float64}, Weave::WeavingOnManifold; c
     fig = Figure(size = (1000,1000))
     ax = Axis3(fig[1,1], aspect=(1.,1,1))
    # hidespines!(ax); hidedecorations!(ax);
-    implicit_manifold = x->(Weave.manifold == "torus") ? (0.75 + (x[1]^2+x[2]^2+x[3]^2))^2 - 4*(x[1]^2+x[2]^2) : x[1]^2+x[2]^2+x[3]^2-1
-    plot_implicit_surface!(ax, implicit_manifold; wireframe=false, transparency=true, color=RGBA(0.75,0.75,0.75,0.6), samples = (75,75,75))
+    implicit_manifold = x->(Weave.manifold == "torus") ? (0.75 + (x[1]^2+x[2]^2+x[3]^2))^2 - 4*(x[1]^2+x[2]^2) : ((Weave.manifold == "flattorus") ? x[3] : x[1]^2+x[2]^2+x[3]^2-1)
+    plot_implicit_surface!(ax, implicit_manifold; wireframe=false, transparency=true, color=RGBA(0.75,0.75,0.75,0.6), samples = (75,75,75), xlims = (Weave.manifold == "flattorus") ? (0,1) : (-1-Weave.offset, 1+Weave.offset), ylims = (Weave.manifold == "flattorus") ? (0,1) : (-1-Weave.offset, 1+Weave.offset), zlims = (Weave.manifold == "flattorus") ? (-2*Weave.offset-0.01,2*Weave.offset+0.01) : (-1-Weave.offset, 1+Weave.offset))
     foreach(bar->linesegments!(ax, [Point3f0(p0[:,bar[1]]), Point3f0(p0[:,bar[2]])]; color=:blue, linewidth=8), Weave.bars)
 
     if isempty(colorscheme)
@@ -170,6 +273,7 @@ function test_sphere_a()
     Weave = WeavingsOnManifolds.WeavingOnManifold([false,true,false,true, true,false,true,false, false,true,false,true], [(1,5),(2,11),(3,7),(4,9),(6,10),(8,12)], [(1,2),(2,3),(3,4),(4,1), (5,6),(6,7),(7,8),(8,5), (9,10),(10,11),(11,12),(12,9)], [(1,2,3,4), (5,6,7,8), (9,10,11,12)])
     p0 = [1 0 0; 0 -1 0; -1 0 0; 0 1 0; 1 0 0; 0 0 -1; -1 0 0; 0 0 1; 0 1 0; 0 0 -1; 0 -1 0; 0 0 1]'
     initialConfiguration = toArray(p0, Weave) #+ (randn(Float64, length(toArray(p0, Weave))) .- 0.5)*0.05
+    display(Weave.coordinateVariables)
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
     plotWeaving(q, Weave)
     q = computeOptimalWeaving(q, Weave)
@@ -256,8 +360,26 @@ function test_sphere_c()
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
     plotWeaving(q, Weave; colorscheme=[:yellow,:cyan,:purple,:green,:blue,:red])
     q = computeOptimalWeaving(q, Weave)
+end
+
+function test_flattorus_plain()
+    Weave = WeavingsOnManifolds.WeavingOnManifold([true,false,true, false,true,false, true,false,true, false,true,false, true,false,true, false,true,false], [(1,10),(2,13),(3,16), (4,11),(5,14),(6,17), (7,12),(8,15),(9,18)], 
+                                            [(1,2),(2,3), (4,5),(5,6), (7,8),(8,9), (10,11),(11,12), (13,14),(14,15), (16,17),(17,18)], 
+                                            []; offset=0.1, manifold = "flattorus", samples = [[0.,0.,0],[]], PBC=[(3,1,[1.,0,0]), (6,4,[1.,0,0]), (9,7,[1.,0,0]), (12,10,[0.,1.,0]), (15,13,[0.,1.,0]), (18,16,[0.,1.,0])])
+    p0 = [0 0 0; 0.5 0 0; 1 0 0; 0 0.5 0; 0.5 0.5 0; 1 0.5 0; 0 1 0; 0.5 1 0; 1 1 0; 
+        0 0 0; 0 0.5 0; 0 1 0; 0.5 0 0; 0.5 0.5 0; 0.5 1 0; 1 0 0; 1 0.5 0; 1 1 0; 
+    ]'
+
+    initialConfiguration = toArray(p0,Weave)
+
+    q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
+    plotWeaving(q, Weave)
+
+    q = computeOptimalWeaving(q, Weave; maxseconds=50)
+    plotWeaving(q, Weave)
 
 end
+
 
 
 function test_torus_trefoil()
@@ -275,6 +397,7 @@ end
 function newtonCorrect(q::Vector{Float64}, variables, equations; tol = 1e-8)
     global qnew, damping = q, 0.25
 	jac = hcat([differentiate(eq, variables) for eq in equations]...)
+
     while( norm(evaluate.(equations, variables=>q)) > tol )
 		J = Matrix{Float64}(evaluate.(jac, variables=>q))
 		global qnew = q .- damping*pinv(J)'*evaluate.(equations, variables=>q)
@@ -289,14 +412,13 @@ function newtonCorrect(q::Vector{Float64}, variables, equations; tol = 1e-8)
 	return q
 end
 
-function computeOptimalWeaving(initialConfiguration::Vector{Float64}, Weave::WeavingOnManifold; tol = 1e-3)
+function computeOptimalWeaving(initialConfiguration::Vector{Float64}, Weave::WeavingOnManifold; tol = 1e-3, maxseconds=1000)
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints)
     Q = x->energyFunction(x, Weave)
     G = ConstraintVariety(Weave.coordinateVariables, Weave.constraints, length(Weave.coordinateVariables), length(Weave.coordinateVariables)-length(Weave.constraints))
-    resultmin = findminima(q, 1e-3, G, Q; whichstep="gaussnewtonstep", maxseconds=1000, stepdirection = "gradientdescent")
+    resultmin = findminima(q, 1e-3, G, Q; whichstep="gaussnewtonstep", stepdirection = "gradientdescent")
     return(resultmin.computedpoints[end])
 end
 
-test_sphere_c()
-#test_torus_trefoil()
+test_flattorus_plain()
 end
