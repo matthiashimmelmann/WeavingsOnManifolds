@@ -2,7 +2,7 @@ module WeavingsOnManifolds
 import HomotopyOpt.HomotopyContinuation: Expression, Variable, @var, evaluate, differentiate, System, real_solutions, solve
 import HomotopyOpt: ConstraintVariety, findminima
 import LinearAlgebra: pinv, norm, cross, nullspace
-import Implicit3DPlotting.GLMakiePlottingLibrary: Figure, Axis3, hidespines!, hidedecorations!, Point3f0, scatter!, linesegments!, RGBA
+import Implicit3DPlotting.GLMakiePlottingLibrary: hidedecorations!, hidespines!, Figure, Axis3, hidespines!, hidedecorations!, Point3f0, scatter!, linesegments!, RGBA
 import Implicit3DPlotting: plot_implicit_surface!
 
 export test, computeOptimalWeaving
@@ -246,6 +246,8 @@ function plotWeaving(configuration::Vector{Float64}, Weave::WeavingOnManifold; c
     p0 = toMatrix(configuration, Weave)
     fig = Figure(size = (1000,1000))
     ax = Axis3(fig[1,1], aspect=(1.,1,1))
+    hidedecorations!(ax)
+    hidespines!(ax)
    # hidespines!(ax); hidedecorations!(ax);
     implicit_manifold = x->(Weave.manifold == "torus") ? (0.75 + (x[1]^2+x[2]^2+x[3]^2))^2 - 4*(x[1]^2+x[2]^2) : ((Weave.manifold == "flattorus") ? x[3] : x[1]^2+x[2]^2+x[3]^2-1)
     plot_implicit_surface!(ax, implicit_manifold; wireframe=false, transparency=true, color=RGBA(0.75,0.75,0.75,0.6), samples = (75,75,75), xlims = (Weave.manifold == "flattorus") ? (0,1) : (-1-Weave.offset, 1+Weave.offset), ylims = (Weave.manifold == "flattorus") ? (0,1) : (-1-Weave.offset, 1+Weave.offset), zlims = (Weave.manifold == "flattorus") ? (-2*Weave.offset-0.01,2*Weave.offset+0.01) : (-1-Weave.offset, 1+Weave.offset))
@@ -269,17 +271,52 @@ function plotWeaving(configuration::Vector{Float64}, Weave::WeavingOnManifold; c
     display(fig)
 end
 
+function toSphere(configuration, Weave)
+    p0 = toMatrix(configuration, Weave)
+    newEdgeList = []
+    newPointList = []
+    display(p0)
+    for i in 1:size(p0)[2]
+        #p0[:,i] = p0[:,i]./norm(p0[:,i])
+    end
+    display(p0)
+    outer = 1
+    epsilon = 0.15
+    for edge in Weave.cables
+        outer = norm(p0[:,edge[1]])>1 ? 1 : -1
+        for t in 0:0.025:0.975
+            curP = t*(p0[:,edge[2]]-p0[:,edge[1]])+p0[:,edge[1]]
+            #push!(newPointList, (outer==1 ? (1+epsilon-(6*epsilon)*t^2+(4*epsilon)*t^3) : (1+epsilon-(6*epsilon)*(1-t)^2+(4*epsilon)*(1-t)^3))*curP./norm(curP))
+            push!(newPointList, curP ./ norm(curP))
+            push!(newEdgeList, (length(newPointList), length(newPointList)+1))
+        end
+        curP = p0[:,edge[2]]
+        push!(newPointList, #=(1-outer*epsilon)*=#curP ./ norm(curP))
+    end
+    for i in size(p0)[2]
+        push!(newPointList, p0[:,i] ./ norm(p0[:,i]))
+    end
+    open("weavingframeworkmodelonsphereb2.poly", "w") do f
+        write(f, "POINTS\n")
+        foreach(i->write(f, string("$(i): ", newPointList[i][1], " ", newPointList[i][2], " ", newPointList[i][3],"\n")), 1:length(newPointList))
+        write(f,"POLYS\n")
+        foreach(i->write(f, string("$(i): ", newEdgeList[i][1], " ", newEdgeList[i][2],"\n")), 1:length(newEdgeList))
+        write(f,"END")
+    end
+end
+
 function test_sphere_a()
     Weave = WeavingsOnManifolds.WeavingOnManifold([false,true,false,true, true,false,true,false, false,true,false,true], [(1,5),(2,11),(3,7),(4,9),(6,10),(8,12)], [(1,2),(2,3),(3,4),(4,1), (5,6),(6,7),(7,8),(8,5), (9,10),(10,11),(11,12),(12,9)], []#=[(1,2,3,4), (5,6,7,8), (9,10,11,12)]=#)
     p0 = [1 0 0; 0 -1 0; -1 0 0; 0 1 0; 1 0 0; 0 0 -1; -1 0 0; 0 0 1; 0 1 0; 0 0 -1; 0 -1 0; 0 0 1]'
     initialConfiguration = toArray(p0, Weave) #+ (randn(Float64, length(toArray(p0, Weave))) .- 0.5)*0.05
     display(Weave.coordinateVariables)
-    q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
+    q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-12)
     q = computeOptimalWeaving(q, Weave)
     normalspace=evaluate.(differentiate(Weave.constraints, Weave.coordinateVariables), Weave.coordinateVariables=>q)
     display("Tangent direction")
     display(toMatrix(collect(nullspace(normalspace)[1:end,1]), Weave))
     plotWeaving(q, Weave; colorscheme=[:yellow,:cyan,:purple,:green,:blue,:red])
+    toSphere(q, Weave)
 end
 
 function test_sphere_a2()
@@ -307,6 +344,7 @@ function test_sphere_a2()
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
     q = computeOptimalWeaving(q, Weave)
     plotWeaving(q, Weave; colorscheme=[:yellow,:yellow,:cyan,:cyan,:purple,:purple])
+    toSphere(q, Weave)
 end
 
 function test_sphere_b()
@@ -320,6 +358,7 @@ function test_sphere_b()
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
     q = computeOptimalWeaving(q, Weave)
     plotWeaving(q, Weave; colorscheme=[:yellow, :green, :cyan, :purple])
+    toSphere(q, Weave)
 end
 
 function test_sphere_b2()
@@ -357,7 +396,8 @@ function test_sphere_c()
     initialConfiguration = toArray(p0,Weave)
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints; tol = 1e-8)
     q = computeOptimalWeaving(q, Weave)
-    plotWeaving(q, Weave; colorscheme=[:yellow,:cyan,:purple,:green,:blue,:red])
+    plotWeaving(q, Weave; colorscheme=[:yellow,:cyan,:purple,:green,:teal,:red])
+    toSphere(q, Weave)
 end
 
 function test_flattorus_plain()
@@ -410,15 +450,16 @@ function newtonCorrect(q::Vector{Float64}, variables, equations; tol = 1e-8)
 	return q
 end
 
-function computeOptimalWeaving(initialConfiguration::Vector{Float64}, Weave::WeavingOnManifold; tol = 1e-3, maxseconds=50)
+function computeOptimalWeaving(initialConfiguration::Vector{Float64}, Weave::WeavingOnManifold; tol = 1e-3, maxseconds=250)
     q = newtonCorrect(initialConfiguration, Weave.coordinateVariables, Weave.constraints)
     Q = x->energyFunction(x, Weave)
     G = ConstraintVariety(Weave.coordinateVariables, Weave.constraints, length(Weave.coordinateVariables), length(Weave.coordinateVariables)-length(Weave.constraints))
-    resultmin = findminima(q, 1e-3, G, Q; whichstep="gaussnewtonstep", stepdirection = "gradientdescent")
+    @time resultmin = findminima(q, 1e-3, G, Q; whichstep="gaussnewtonstep", stepdirection = "gradientdescent", maxseconds=maxseconds)
+    @time resultmin = findminima(q, 1e-3, G, Q; whichstep="EDStep", homotopyMethod="HomotopyContinuation", stepdirection = "gradientdescent", maxseconds=maxseconds)
     return(resultmin.computedpoints[end])
 end
 
-test_flattorus_plain()
+test_sphere_a()
 
 #TODO how does the energy behave, when I squish the sphere => become an ellipse. 
 #TODO how to restrict weavings on manifolds?
