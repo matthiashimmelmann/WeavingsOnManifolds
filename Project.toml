@@ -6,3 +6,4 @@ version = "0.1.0"
 [deps]
 HomotopyOpt = "8c5e0f79-7402-43d4-9c5c-e1bde87b1895"
 Implicit3DPlotting = "d997a800-832a-4a4c-b340-7dddf3c1ad50"
+LaTeXStrings = "b964fa9f-0449-5b57-a5c2-d3ea65f4040f"

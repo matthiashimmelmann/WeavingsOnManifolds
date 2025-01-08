@@ -1,0 +1,14 @@
+#!/bin/bash
+#SBATCH --job-name=DodecaWeave
+#SBATCH --time=01-23:10
+#SBATCH --ntasks=1
+#SBATCH --mem=20g
+#SBATCH --chdir=/work/himmelmann1/WeavingsOnManifolds/src/   # working directory of the job
+#SBATCH -o ./run.out
+#SBATCH --mail-type=ALL              # always get mail notifications
+
+export http_proxy=http://proxy2.uni-potsdam.de:3128
+export https_proxy=http://proxy2.uni-potsdam.de:3128
+
+# Specify the path to the config file
+julia -e "include(\"WeavingsOnManifolds.jl\")"
